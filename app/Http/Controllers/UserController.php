@@ -11,15 +11,33 @@ use Illuminate\Support\Facades\Validator;
 
 class UserController extends Controller
 {
+    private $status_code= 200; // successfully
+
     public function register(Request $request)
     {
-        $this->validator($request->all())->validate();
+        // $validator = $this->validator($request->all())->validate();
+        $validator = Validator::make($request->all(),
+            [
+                'name' => ['required', 'string', 'max:255'],
+                'email' => ['required', 'string', 'email', 'max:255'], // , 'unique:users'
+                'password' => ['required', 'string', 'min:4'],
+            ]
+        );
+        if($validator->fails()) {
+            return response()->json(["status" => "failed", "message" => "Please Input Valid Data", "errors" => $validator->errors()]);
+        }
+        $user_status = User::where("email", $request->email)->first();
+        if(!is_null($user_status)) {
+           return response()->json(["status" => "failed", "success" => false, "message" => "Whoops! email already registered"]);
+        }
+
         $user = $this->create($request->all());
-        // $this->guard()->login($user);
-        return response()->json([
-            'user' => $user,
-            'message' => 'registration successful'
-        ], 200);
+        if(!is_null($user)) {
+            $this->guard()->login($user);
+            return response()->json(["status" => $this->status_code, "success" => true, "message" => "Registration completed successfully", "data" => $user]);
+        }else {
+            return response()->json(["status" => "failed", "success" => false, "message" => "Failed to register"]);
+        }
     }
     /**
      * Get a validator for an incoming registration request.
@@ -32,15 +50,13 @@ class UserController extends Controller
         return Validator::make($data, [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
-            //'password' => ['required', 'string', 'min:4', 'confirmed'],
-            // NO PASSWORD CONFIRMATION
             'password' => ['required', 'string', 'min:4'],
         ]);
     }
 
     /**
      * Create a new user instance after a valid registration.
-     *
+     * @author Mohammad Ali Abdullah .. 
      * @param  array  $data
      * @return \App\User
      */
@@ -56,17 +72,45 @@ class UserController extends Controller
     {
         return Auth::guard();
     }
-
+    /**
+     * method public
+    * @author Mohammad Ali Abdullah
+    * @date 01-01-2021.
+    */
     public function login(Request $request)
     {
-        $credentials = $request->only('email', 'password');
 
-        if (Auth::attempt($credentials)) {
-            // Authentication passed...
-            $authuser = auth()->user();
-            return response()->json(['message' => 'Login successful'], 200);
-        } else {
-            return response()->json(['message' => 'Invalid email or password'], 401);
+        $validator = Validator::make($request->all(),
+            [
+                "email"             =>          "required|email",
+                "password"          =>          "required"
+            ]
+        );
+        // check validation email and password .. 
+        if($validator->fails()) {
+            return response()->json(["status" => "failed", "validation_error" => $validator->errors()]);
+        }
+        // check user email validation ..
+        $email_status = User::where("email", $request->email)->first();
+        if(!is_null($email_status)) {
+            // check user password validation ..
+            // ---- first try -----
+            // $password_status    =   User::where("email", $request->email)->where("password", Hash::check($request->password))->first();
+            // if password is correct ..
+            // ---- first try -----
+            // if(!is_null($password_status)) {
+            if(Hash::check($request->password, $email_status->password)) {
+                $credentials = $request->only('email', 'password');
+                if (Auth::attempt($credentials)) {
+                    // Authentication passed ..
+                    $authuser = auth()->user();
+                    return response()->json(["status" => $this->status_code, "success" => true, "message" => "You have logged in successfully", "data" => $authuser]);
+                }
+            }else {
+                return response()->json(["status" => "failed", "success" => false, "message" => "Unable to login. Incorrect password."]);
+            }
+        }else{
+            return response()->json(["status" => "failed", "success" => false, "message" => "Email doesnt exist."]);
         }
     }
 
